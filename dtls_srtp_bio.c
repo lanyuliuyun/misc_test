@@ -6,6 +6,7 @@
 #include <srtp2/srtp.h>
 #include <openssl/ssl.h>
 #include <openssl/rand.h>
+#include <openssl/err.h>
 
 #define _GNU_SOURCE
 #define __USE_GNU
@@ -822,6 +823,7 @@ int main(int argc, char *argv[])
 
     loop_destroy(loop);
     srtp_shutdown();
+    ERR_free_strings();
     
   #if !defined(NDEBUG)
     fclose(client_source_fp);

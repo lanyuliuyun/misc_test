@@ -6,6 +6,7 @@
 #include <srtp2/srtp.h>
 #include <openssl/ssl.h>
 #include <openssl/rand.h>
+#include <openssl/err.h>
 
 #define _GNU_SOURCE
 #define __USE_GNU
@@ -78,7 +79,7 @@ int setup_dtls_srtp(int is_client, SSL *ssl, srtp_t *srtp_tx, srtp_t *srtp_rx)
     const char *key_label = "EXTRACTOR-dtls_srtp";
     SSL_export_keying_material(ssl, key_material, key_material_len, key_label, strlen(key_label), NULL, 0, 0);
     
-  #if 0
+  #if defined(DTLS_SRTP_KEY_DUMP)
     printf("  dtls key material: 0x");
     for (int i = 0; i < key_material_len; ++i)
     {
@@ -88,7 +89,7 @@ int setup_dtls_srtp(int is_client, SSL *ssl, srtp_t *srtp_tx, srtp_t *srtp_rx)
   #endif
 
     SRTP_PROTECTION_PROFILE *srtp_profile = SSL_get_selected_srtp_profile(ssl);
-  #if 0
+  #if defined(DTLS_SRTP_KEY_DUMP)
     printf("  negotiated srtp profile, id: %lu, name: %s\n", srtp_profile->id, srtp_profile->name);
   #endif
 
@@ -107,7 +108,7 @@ int setup_dtls_srtp(int is_client, SSL *ssl, srtp_t *srtp_tx, srtp_t *srtp_rx)
     memcpy(server_master_key_with_salt+SRTP_AES_128_KEY_LEN, 
         (key_material+SRTP_AES_128_KEY_LEN+SRTP_AES_128_KEY_LEN+SRTP_SALT_LEN), SRTP_SALT_LEN);
 
-  #if 0
+  #if defined(DTLS_SRTP_KEY_DUMP)
     printf("  client key_width_salt: ");
     for (int i = 0; i < sizeof(client_master_key_with_salt); ++i)
     {
@@ -255,9 +256,6 @@ static
 void on_dtls_client_dtls_io_event(int fd, int event, void* userdata)
 {
     dtls_client_t *dtls_client = (dtls_client_t*)userdata;
-    int ssl_ret;
-    int ssl_error;
-
     if (dtls_client->dtls_state == DTLS_STATE_HANDSHAKE)
     {
         if (event & (POLLHUP | POLLERR))
@@ -266,15 +264,19 @@ void on_dtls_client_dtls_io_event(int fd, int event, void* userdata)
         }
         else
         {
+            int ssl_ret;
+            int ssl_error;
+
             ssl_ret = SSL_do_handshake(dtls_client->ssl);
             ssl_error = SSL_get_error(dtls_client->ssl, ssl_ret);
             if (ssl_ret == 1)
             {
                 dtls_client->dtls_state = DTLS_STATE_SNDRCV;
-                log_info("=== dtls client handshake OK ===");
 
                 if (setup_dtls_srtp(1, dtls_client->ssl, &dtls_client->srtp_tx, &dtls_client->srtp_rx) == 0)
                 {
+            		log_info("=== dtls-srtp client handshake and setup OK ===");
+
                     send_srtp_packet(dtls_client->srtp_tx, dtls_client->io_fd, dtls_client->rtp_packet_sn, 96, 123456);
                     dtls_client->rtp_packet_sn++;
                 }
@@ -285,7 +287,7 @@ void on_dtls_client_dtls_io_event(int fd, int event, void* userdata)
             }
             else
             {
-                log_error("tls client handshake failed: fatal ssl error: %d, sys error: %d", ssl_error, errno);
+                log_error("dtls client handshake failed: fatal ssl error: %d, sys error: %d", ssl_error, errno);
             }
         }
     }
@@ -431,7 +433,7 @@ void on_dtls_server_dtls_io_event(int dtls_fd, int event, void* userdata)
     {
         if (event & (POLLHUP | POLLERR))
         {
-            log_error("tls server handshake failed: IO failure, sys error: %d", errno);
+            log_error("dtls server handshake failed: IO failure, sys error: %d", errno);
         }
         else
         {
@@ -440,11 +442,15 @@ void on_dtls_server_dtls_io_event(int dtls_fd, int event, void* userdata)
             if (ssl_ret == 1)
             {
                 dtls_server->dtls_state = DTLS_STATE_SNDRCV;
-                log_info("=== dtls server handshake OK ===");
                 if (setup_dtls_srtp(0, dtls_server->ssl, &dtls_server->srtp_tx, &dtls_server->srtp_rx) == 0)
                 {
+                    log_info("=== dtls-srtp server handshake and setup OK ===");
                     send_srtp_packet(dtls_server->srtp_tx, dtls_server->io_fd, dtls_server->rtp_packet_sn, 97, 123457);
                     dtls_server->rtp_packet_sn++;
+                }
+                else
+                {
+                    log_error("dtls server, failed to setup srtp");
                 }
             }
             else if (ssl_ret < 0 && (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE))
@@ -652,6 +658,7 @@ int main(int argc, char *argv[])
     loop_destroy(loop);
 
     srtp_shutdown();
+    ERR_free_strings();
 
     return 0;
 }
