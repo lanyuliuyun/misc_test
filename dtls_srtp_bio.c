@@ -321,7 +321,7 @@ void on_dtls_client_dtls_io_event(int fd, int event, void *userdata)
             write(dtls_client->io_fd, packet, ret);
         }
       #else
-        sendfile(dtls_client->io_fd, fd, NULL, 1500);
+        while(sendfile(dtls_client->io_fd, fd, NULL, 1500) > 0);
       #endif
     }
 
@@ -566,7 +566,7 @@ void on_dtls_server_dtls_io_event(int fd, int event, void *userdata)
             write(dtls_server->io_fd, packet, ret);
         }
       #else
-        sendfile(dtls_server->io_fd, fd, NULL, 1500);
+        while(sendfile(dtls_server->io_fd, fd, NULL, 1500) > 0);
       #endif
     }
 
