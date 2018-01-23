@@ -445,8 +445,8 @@ void on_dtls_server_dtls_io_event(int dtls_fd, int event, void* userdata)
                 if (setup_dtls_srtp(0, dtls_server->ssl, &dtls_server->srtp_tx, &dtls_server->srtp_rx) == 0)
                 {
                     log_info("=== dtls-srtp server handshake and setup OK ===");
-                    send_srtp_packet(dtls_server->srtp_tx, dtls_server->io_fd, dtls_server->rtp_packet_sn, 97, 123457);
-                    dtls_server->rtp_packet_sn++;
+                    //send_srtp_packet(dtls_server->srtp_tx, dtls_server->io_fd, dtls_server->rtp_packet_sn, 97, 123457);
+                    //dtls_server->rtp_packet_sn++;
                 }
                 else
                 {

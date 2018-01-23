@@ -406,7 +406,7 @@ int dtls_client_start(dtls_client_t* dtls_client, int io_fd, loop_t *loop, FILE 
     dtls_client->sink_fp = sink_fp;
 
     socketpair(AF_UNIX, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0, fds);
-    //printf("=== client, io_fd: %d, dtls fds, %d <--> %d ===\n", io_fd, fds[0], fds[1]);
+    printf("=== client, io_fd: %d, dtls fds, %d <--> %d ===\n", io_fd, fds[0], fds[1]);
 
     dtls_client->dtls_fd = fds[0];
     dtls_client->dtls_channel = channel_new(dtls_client->dtls_fd, loop, on_dtls_client_dtls_io_event, dtls_client);
@@ -530,7 +530,7 @@ void on_dtls_server_dtls_io_event(int fd, int event, void *userdata)
                 {
                     dtls_server->dtls_state = DTLS_STATE_SNDRCV;
 
-                    if (setup_dtls_srtp(1, dtls_server->ssl, &dtls_server->srtp_tx, &dtls_server->srtp_rx) == 0)
+                    if (setup_dtls_srtp(0, dtls_server->ssl, &dtls_server->srtp_tx, &dtls_server->srtp_rx) == 0)
                     {
                         log_info("=== dtls-srtp server handshake and setup OK ===");
                     }
@@ -656,7 +656,7 @@ int dtls_server_start
     dtls_server->sink_fp = sink_fp;
 
     socketpair(AF_UNIX, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0, fds);
-    //printf("=== server, io_fd: %d, dtls fds, %d <--> %d ===\n", io_fd, fds[0], fds[1]);
+    printf("=== server, io_fd: %d, dtls fds, %d <--> %d ===\n", io_fd, fds[0], fds[1]);
 
     dtls_server->dtls_fd = fds[0];
     dtls_server->dtls_channel = channel_new(dtls_server->dtls_fd, loop, on_dtls_server_dtls_io_event, dtls_server);
@@ -777,10 +777,12 @@ int main(int argc, char *argv[])
     key_file = "/mnt/d/ca/key.pem";
     ca_pwd = "sslselftest";
     
+   #if defined(DTLS_SRTP_KEY_DUMP)
     client_source_fp = fopen("client_source.srtp", "wb");
     client_sink_fp = fopen("client_sink.srtp", "wb");
     server_source_fp = fopen("server_source.srtp", "wb");
     server_sink_fp = fopen("server_sink.srtp", "wb");
+   #endif
   #else
     if (argc < 4)
     {
@@ -826,10 +828,12 @@ int main(int argc, char *argv[])
     ERR_free_strings();
     
   #if !defined(NDEBUG)
+   #if defined(DTLS_SRTP_KEY_DUMP)
     fclose(client_source_fp);
     fclose(client_sink_fp);
     fclose(server_source_fp);
     fclose(server_sink_fp);
+   #endif
   #endif
 
     return 0;

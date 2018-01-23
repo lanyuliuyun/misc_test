@@ -3,9 +3,9 @@ TINYLIB_ROOT = /mnt/d/tinylib
 
 dtls_srtp_bio: dtls_srtp_bio.c
 	gcc $^ -o $@ -I$(TINYLIB_ROOT) -g -L$(TINYLIB_ROOT)/output -ltinylib \
-        -lssl -lcrypto \
-        -ldl -pthread -lsrtp2 \
-        -DDTLS_SRTP_KEY_DUMP
+        -I/usr/local/openssl/include \
+        -L/usr/local/openssl/lib -lssl -lcrypto \
+        -ldl -pthread -lsrtp2
 
 dtls_srtp: dtls_srtp.c
 	gcc $^ -o $@ -I$(TINYLIB_ROOT) -g -L$(TINYLIB_ROOT)/output -ltinylib \
