@@ -5,7 +5,6 @@
 
 #include <tinylib/net/loop.h>
 #include <tinylib/net/udp_peer.h>
-#include <tinylib/net/tcp_client.h>
 #include <tinylib/util/log.h>
 
 #include <unistd.h>
@@ -14,8 +13,9 @@
 #include <pthread.h>
 
 #if !defined(USE_ICE_HOST) && !defined(USE_ICE_SVRFLX) && !defined(USE_ICE_RELAY)
-#error "at least one type ice candidate type support must be enabled"
-#error "please define one or more macro of USE_ICE_HOST/USE_ICE_SVRFLX/USE_ICE_RELAY"
+#error at least one type ice candidate type support must be enabled
+#error please define one or more macro of USE_ICE_HOST/USE_ICE_SVRFLX/USE_ICE_RELAY
+#error USE_ICE_HOST and USE_ICE_SVRFLX MUST NOT be enabled at the same time
 #endif
 
 struct ice_global
@@ -673,7 +673,10 @@ void offer_local_candidate(void)
 static
 void ice_on_cand_host_done(void)
 {
-    offer_local_candidate();
+    if (g_ice_global.expect_cand_done_count == 0)
+    {
+        offer_local_candidate();
+    }
 
     return;
 }
