@@ -15,7 +15,6 @@
 #if !defined(USE_ICE_HOST) && !defined(USE_ICE_SVRFLX) && !defined(USE_ICE_RELAY)
 #error at least one type ice candidate type support must be enabled
 #error please define one or more macro of USE_ICE_HOST/USE_ICE_SVRFLX/USE_ICE_RELAY
-#error USE_ICE_HOST and USE_ICE_SVRFLX MUST NOT be enabled at the same time
 #endif
 
 struct ice_global
@@ -27,12 +26,12 @@ struct ice_global
     pj_timer_heap_t *timer_heap;
     pj_stun_config stun_config;
 
-  #if defined(USE_ICE_HOST) && !defined(USE_ICE_SVRFLX)
+  #if defined(USE_ICE_HOST)
     inetaddr_t ice_host_local_addr;
     udp_peer_t *ice_host_transport;
   #endif
 
-  #if defined(USE_ICE_SVRFLX) && !defined(USE_ICE_HOST)
+  #if defined(USE_ICE_SVRFLX)
     inetaddr_t stun_server_addr;
     pj_sockaddr pj_stun_server_addr;
     int stun_candidate_done;
@@ -43,22 +42,22 @@ struct ice_global
 
   #if defined(USE_ICE_RELAY)
     inetaddr_t turn_server_addr;
+    pj_sockaddr pj_turn_server_addr;
     inetaddr_t turn_local_addr;
     udp_peer_t *turn_transport;
     pj_turn_session *turn;
   #endif
 
     pj_ice_sess *ice;
-    int ice_passive;
     char ice_ufrag[8];
     char ice_passwd[32];
     char ice_foundation[32];
     int expect_cand_done_count;
 
-  #if defined(USE_ICE_HOST) && !defined(USE_ICE_SVRFLX)
+  #if defined(USE_ICE_HOST)
     inetaddr_t candidate_host;
   #endif
-  #if defined(USE_ICE_SVRFLX) && !defined(USE_ICE_HOST)
+  #if defined(USE_ICE_SVRFLX)
     inetaddr_t candidate_svrflx;
   #endif
   #if defined(USE_ICE_RELAY)
@@ -109,7 +108,7 @@ void libpj_uninit(void)
 
 /**********************************************************************/
 
-#if defined(USE_ICE_HOST) && !defined(USE_ICE_SVRFLX)
+#if defined(USE_ICE_HOST)
 static
 void on_ice_local_host_udp_message(udp_peer_t *peer, void *message, unsigned size, void* userdata, const inetaddr_t *peer_addr)
 {
@@ -164,7 +163,7 @@ void cleanup_ice_local_host(void)
 
 /**********************************************************************/
 
-#if defined(USE_ICE_SVRFLX) && !defined(USE_ICE_HOST)
+#if defined(USE_ICE_SVRFLX)
 
 static
 void on_stun_udp_message(udp_peer_t *peer, void *message, unsigned size, void* userdata, const inetaddr_t *peer_addr)
@@ -191,7 +190,7 @@ void on_stun_udp_message(udp_peer_t *peer, void *message, unsigned size, void* u
     }
     else
     {
-        pj_ice_sess_on_rx_pkt(g_ice_global.ice, 1, 2, message, size, &pj_addr, sizeof(pj_addr));
+        pj_ice_sess_on_rx_pkt(g_ice_global.ice, 1, 3, message, size, &pj_addr, sizeof(pj_addr));
     }
 
     return;
@@ -274,13 +273,25 @@ void on_stun_request_complete
                 /* For host candidates, the base is the same as the host candidate itself */
                 /* For reflexive candidates, the base is the local IP address of the socket */
 
-                /* 获取经 NAT 映射后的地址后，将采取直接的 P2P 通信，故而按照 HOST 方式来添加 candidate */
-                pj_ice_sess_add_cand(g_ice_global.ice, 1, 2, PJ_ICE_CAND_TYPE_HOST, 65535, &str_ice_foundation, 
+                inetaddr_initbyipport(&g_ice_global.candidate_svrflx, 
+                    pj_inet_ntoa(mapped_addr->ipv4.sin_addr), pj_sockaddr_get_port(mapped_addr));
+
+                /* PJ内部也是直接将 checklist中本地候选地址中SVRFLX类型的addr替换成对应的base addr */
+
+                pj_ice_sess_add_cand(g_ice_global.ice, 1, 3, PJ_ICE_CAND_TYPE_HOST, 65535, &str_ice_foundation, 
+                    &pj_host_addr,
+                    &pj_host_addr,
+                    NULL,
+                    sizeof(pj_host_addr),
+                    NULL);
+
+                pj_ice_sess_add_cand(g_ice_global.ice, 1, 4, PJ_ICE_CAND_TYPE_SRFLX, 65535, &str_ice_foundation, 
                     mapped_addr,
                     &pj_host_addr,
                     NULL,
                     sizeof(*mapped_addr),
                     NULL);
+
                 inetaddr_initbyipport(&g_ice_global.candidate_svrflx, 
                     pj_inet_ntoa(mapped_addr->ipv4.sin_addr), pj_sockaddr_get_port(mapped_addr));
 
@@ -411,7 +422,7 @@ void on_turn_channel_bound(pj_turn_session *sess, const pj_sockaddr_t *peer_addr
 static
 void on_turn_rx_data(pj_turn_session *sess, void *pkt, unsigned pkt_len, const pj_sockaddr_t *peer_addr, unsigned addr_len)
 {
-    pj_ice_sess_on_rx_pkt(g_ice_global.ice, 1, 3, pkt, pkt_len, peer_addr, addr_len);
+    pj_ice_sess_on_rx_pkt(g_ice_global.ice, 1, 2, pkt, pkt_len, peer_addr, addr_len);
 
     return;
 }
@@ -430,7 +441,7 @@ void on_turn_state_change(pj_turn_session *sess, pj_turn_state_t old_state, pj_t
         pj_turn_session_get_info(sess, &turn_session_info);
 
         /* For relayed candidates, the base address is the transport address allocated in the TURN server for this candidate */
-        pj_ice_sess_add_cand(g_ice_global.ice, 1, 3, PJ_ICE_CAND_TYPE_RELAYED, 65535, &str_ice_foundation, 
+        pj_ice_sess_add_cand(g_ice_global.ice, 1, 2, PJ_ICE_CAND_TYPE_RELAYED, 65535, &str_ice_foundation, 
             &turn_session_info.relay_addr,
             &turn_session_info.relay_addr,
             NULL,
@@ -448,6 +459,9 @@ void on_turn_state_change(pj_turn_session *sess, pj_turn_state_t old_state, pj_t
 static
 int setup_turn(const char *turn_server_ip, unsigned short turn_server_port, const char *local_turn_ip, unsigned short local_turn_port)
 {
+    g_ice_global.pj_turn_server_addr.ipv4.sin_family = pj_AF_INET();
+    g_ice_global.pj_turn_server_addr.ipv4.sin_addr = pj_inet_addr2(turn_server_ip);
+    g_ice_global.pj_turn_server_addr.ipv4.sin_port = pj_htons(turn_server_port);
     inetaddr_initbyipport(&g_ice_global.turn_server_addr, turn_server_ip, turn_server_port);
     inetaddr_initbyipport(&g_ice_global.turn_local_addr, local_turn_ip, local_turn_port);
     g_ice_global.turn_transport = udp_peer_new(g_ice_global.loop, local_turn_ip, local_turn_port, on_turn_udp_message, NULL, NULL);
@@ -537,31 +551,32 @@ pj_status_t on_ice_tx_pkt
     /* comp_id 表示是那路媒体，transport_id 是哪路数据通道 
      * 实际主机可能有多个网口IP，因而有多个数据通路，transport_id 可以用此来进行标识
      */
-    log_info("=== on_ice_tx_pkt, comp_id: %u, transport_id: %u ===", comp_id, transport_id);
+    log_info("=== on_ice_tx_pkt, comp_id: %u, transport_id: %u, dst: %s:%u ===", comp_id, transport_id, pj_inet_ntoa(((pj_sockaddr*)dst_addr)->ipv4.sin_addr), pj_sockaddr_get_port(dst_addr));
 
-  #if defined(USE_ICE_HOST) && !defined(USE_ICE_SVRFLX)
+    if (0) {}
+  #if defined(USE_ICE_HOST)
     /* STUN HOST直通 */
-    if (transport_id == 1)
+    else if (transport_id == 1)
     {
         inetaddr_t addr;
         inetaddr_initbyipport(&addr, pj_inet_ntoa(((pj_sockaddr*)dst_addr)->ipv4.sin_addr), pj_sockaddr_get_port(dst_addr));
         udp_peer_send(g_ice_global.ice_host_transport, pkt, size, &addr);
     }
   #endif
-  #if defined(USE_ICE_SVRFLX) && !defined(USE_ICE_HOST)
+  #if defined(USE_ICE_RELAY)
+    /* turn rely */
+    else if (transport_id == 2)
+    {
+        pj_turn_session_sendto(g_ice_global.turn, pkt, size, dst_addr, dst_addr_len);
+    }
+  #endif
+  #if defined(USE_ICE_SVRFLX)
     /* STUN mapped 地址 */
-    if (transport_id == 2)
+    else if (transport_id == 3 || transport_id == 4)
     {
         inetaddr_t addr;
         inetaddr_initbyipport(&addr, pj_inet_ntoa(((pj_sockaddr*)dst_addr)->ipv4.sin_addr), pj_sockaddr_get_port(dst_addr));
         udp_peer_send(g_ice_global.stun_transport, pkt, size, &addr);
-    }
-  #endif
-  #if defined(USE_ICE_RELAY)
-    /* turn rely */
-    if (transport_id == 3)
-    {
-        pj_turn_session_sendto(g_ice_global.turn, pkt, size, dst_addr, dst_addr_len);
     }
   #endif
 
@@ -602,7 +617,6 @@ void setup_ice(int ice_role_passive, const char *ice_ufrag, const char *ice_pass
     };
 
     pj_ice_sess_role ice_role = ice_role_passive != 0 ? PJ_ICE_SESS_ROLE_CONTROLLING : PJ_ICE_SESS_ROLE_CONTROLLED;
-    g_ice_global.ice_passive = ice_role_passive;
 
     pj_str_t str_ice_ufrag = {ice_ufrag, strlen(ice_ufrag)};
     pj_str_t str_ice_passwd = {ice_passwd, strlen(ice_passwd)};
@@ -628,10 +642,10 @@ void cleanup_ice(void)
 
 struct signal_msg
 {
-  #if defined(USE_ICE_HOST) && !defined(USE_ICE_SVRFLX)
+  #if defined(USE_ICE_HOST)
     inetaddr_t cand_host;
   #endif
-  #if defined(USE_ICE_SVRFLX) && !defined(USE_ICE_HOST)
+  #if defined(USE_ICE_SVRFLX)
     inetaddr_t cand_svrflx;
   #endif
   #if defined(USE_ICE_RELAY)
@@ -651,10 +665,10 @@ void offer_local_candidate(void)
 
     struct signal_msg candidate_msg;
     memset(&candidate_msg, 0, sizeof(candidate_msg));
-  #if defined(USE_ICE_HOST) && !defined(USE_ICE_SVRFLX)
+  #if defined(USE_ICE_HOST)
     candidate_msg.cand_host = g_ice_global.candidate_host;
   #endif
-  #if defined(USE_ICE_SVRFLX) && !defined(USE_ICE_HOST)
+  #if defined(USE_ICE_SVRFLX)
     candidate_msg.cand_svrflx = g_ice_global.candidate_svrflx;
   #endif
   #if defined(USE_ICE_RELAY)
@@ -669,7 +683,7 @@ void offer_local_candidate(void)
     return;
 }
 
-#if defined(USE_ICE_HOST) && !defined(USE_ICE_SVRFLX)
+#if defined(USE_ICE_HOST)
 static
 void ice_on_cand_host_done(void)
 {
@@ -682,7 +696,7 @@ void ice_on_cand_host_done(void)
 }
 #endif
 
-#if defined(USE_ICE_SVRFLX) && !defined(USE_ICE_HOST)
+#if defined(USE_ICE_SVRFLX)
 static
 void ice_on_cand_svrflx_done(void)
 {
@@ -713,16 +727,22 @@ void ice_on_cand_relay_done(void)
 static
 void on_signal_message(udp_peer_t *peer, void *message, unsigned size, void* userdata, const inetaddr_t *peer_addr)
 {
-    log_info("=== received remote candidate offer ===");
+    char cand_msg[1024];
+    int cand_msg_len = 0;
 
     struct signal_msg *candidate_msg = (struct signal_msg*)message;
 
-    pj_ice_sess_cand candidates[3];
+    pj_ice_sess_cand candidates[4];
     pj_ice_sess_cand *candidate = candidates;
     int candidate_count = 0;
     memset(candidates, 0, sizeof(candidates));
 
-  #if defined(USE_ICE_HOST) && !defined(USE_ICE_SVRFLX)
+    memset(cand_msg, 0, sizeof(cand_msg));
+    cand_msg_len = snprintf(cand_msg, sizeof(cand_msg)-1, "=== received remote candidate offer");
+
+  #if defined(USE_ICE_HOST)
+    cand_msg_len += snprintf((cand_msg+cand_msg_len), (sizeof(cand_msg)-1-cand_msg_len), ", host: %s:%u", candidate_msg->cand_host.ip, candidate_msg->cand_host.port);
+
     candidate->type = PJ_ICE_CAND_TYPE_HOST;
     candidate->status = PJ_SUCCESS;
     candidate->comp_id = 1;
@@ -730,7 +750,6 @@ void on_signal_message(udp_peer_t *peer, void *message, unsigned size, void* use
     candidate->local_pref = 65535;
     candidate->foundation.ptr = candidate_msg->ice_foundation;
     candidate->foundation.slen = strlen(candidate_msg->ice_foundation);
-    candidate->prio = 255;
     candidate->addr.ipv4.sin_family = pj_AF_INET();
     candidate->addr.ipv4.sin_addr = pj_inet_addr2(candidate_msg->cand_host.ip);
     candidate->addr.ipv4.sin_port = pj_htons(candidate_msg->cand_host.port);
@@ -741,15 +760,54 @@ void on_signal_message(udp_peer_t *peer, void *message, unsigned size, void* use
     candidate++;
   #endif
 
-  #if defined(USE_ICE_SVRFLX) && !defined(USE_ICE_HOST)
-    candidate->type = PJ_ICE_CAND_TYPE_HOST;
+  #if defined(USE_ICE_RELAY)
+    cand_msg_len += snprintf((cand_msg+cand_msg_len), (sizeof(cand_msg)-1-cand_msg_len), ", relay: %s:%u", candidate_msg->cand_relay.ip, candidate_msg->cand_relay.port);
+  
+    candidate->type = PJ_ICE_CAND_TYPE_RELAYED;
     candidate->status = PJ_SUCCESS;
     candidate->comp_id = 1;
     candidate->transport_id = 2;
     candidate->local_pref = 65535;
     candidate->foundation.ptr = candidate_msg->ice_foundation;
     candidate->foundation.slen = strlen(candidate_msg->ice_foundation);
-    candidate->prio = 255;
+    candidate->addr.ipv4.sin_family = pj_AF_INET();
+    candidate->addr.ipv4.sin_addr = pj_inet_addr2(candidate_msg->cand_relay.ip);
+    candidate->addr.ipv4.sin_port = pj_htons(candidate_msg->cand_relay.port);
+    candidate->base_addr.ipv4.sin_family = pj_AF_INET();
+    candidate->base_addr.ipv4.sin_addr = pj_inet_addr2(candidate_msg->cand_relay.ip);
+    candidate->base_addr.ipv4.sin_port = pj_htons(candidate_msg->cand_relay.port);
+    pj_turn_session_set_perm(g_ice_global.turn, 1, &candidate->addr, 1);
+    candidate++;
+    candidate_count++;
+  #endif
+
+  #if defined(USE_ICE_SVRFLX)
+    cand_msg_len += snprintf((cand_msg+cand_msg_len), (sizeof(cand_msg)-1-cand_msg_len), ", svrflx: %s:%u", candidate_msg->cand_svrflx.ip, candidate_msg->cand_svrflx.port);
+
+    /* PJ内部也是直接将 checklist中 SVRFLX类型的addr替换成对应的base addr */
+    candidate->type = PJ_ICE_CAND_TYPE_HOST;
+    candidate->status = PJ_SUCCESS;
+    candidate->comp_id = 1;
+    candidate->transport_id = 3;
+    candidate->local_pref = 65535;
+    candidate->foundation.ptr = candidate_msg->ice_foundation;
+    candidate->foundation.slen = strlen(candidate_msg->ice_foundation);
+    candidate->addr.ipv4.sin_family = pj_AF_INET();
+    candidate->addr.ipv4.sin_addr = pj_inet_addr2(candidate_msg->cand_svrflx.ip);
+    candidate->addr.ipv4.sin_port = pj_htons(candidate_msg->cand_svrflx.port);
+    candidate->base_addr.ipv4.sin_family = pj_AF_INET();
+    candidate->base_addr.ipv4.sin_addr = pj_inet_addr2(candidate_msg->cand_svrflx.ip);
+    candidate->base_addr.ipv4.sin_port = pj_htons(candidate_msg->cand_svrflx.port);
+    candidate_count++;
+    candidate++;
+
+    candidate->type = PJ_ICE_CAND_TYPE_SRFLX;
+    candidate->status = PJ_SUCCESS;
+    candidate->comp_id = 1;
+    candidate->transport_id = 4;
+    candidate->local_pref = 65535;
+    candidate->foundation.ptr = candidate_msg->ice_foundation;
+    candidate->foundation.slen = strlen(candidate_msg->ice_foundation);
     candidate->addr.ipv4.sin_family = pj_AF_INET();
     candidate->addr.ipv4.sin_addr = pj_inet_addr2(candidate_msg->cand_svrflx.ip);
     candidate->addr.ipv4.sin_port = pj_htons(candidate_msg->cand_svrflx.port);
@@ -759,39 +817,18 @@ void on_signal_message(udp_peer_t *peer, void *message, unsigned size, void* use
     candidate_count++;
     candidate++;
   #endif
-
-  #if defined(USE_ICE_RELAY)
-    candidate->type = PJ_ICE_CAND_TYPE_RELAYED;
-    candidate->status = PJ_SUCCESS;
-    candidate->comp_id = 1;
-    candidate->transport_id = 3;
-    candidate->local_pref = 65535;
-    candidate->foundation.ptr = candidate_msg->ice_foundation;
-    candidate->foundation.slen = strlen(candidate_msg->ice_foundation);
-    candidate->prio = 255;
-    candidate->addr.ipv4.sin_family = pj_AF_INET();
-    candidate->addr.ipv4.sin_addr = pj_inet_addr2(candidate_msg->cand_relay.ip);
-    candidate->addr.ipv4.sin_port = pj_htons(candidate_msg->cand_relay.port);
-    candidate->base_addr.ipv4.sin_family = pj_AF_INET();
-    candidate->base_addr.ipv4.sin_addr = pj_inet_addr2(candidate_msg->cand_relay.ip);
-    candidate->base_addr.ipv4.sin_port = pj_htons(candidate_msg->cand_relay.port);
-
-    candidate_count++;
-    pj_turn_session_set_perm(g_ice_global.turn, 1, &candidate->addr, 1);
-  #endif
+    cand_msg_len += snprintf((cand_msg+cand_msg_len), (sizeof(cand_msg)-1-cand_msg_len), " ===\n");
+    log_info(cand_msg);
 
     pj_str_t ice_ufrag = {candidate_msg->ice_ufrag, strlen(candidate_msg->ice_ufrag)};
     pj_str_t ice_passwd = {candidate_msg->ice_passwd, strlen(candidate_msg->ice_passwd)};
     pj_status_t pj_status = pj_ice_sess_create_check_list(g_ice_global.ice, &ice_ufrag, &ice_passwd, candidate_count, candidates);
     if (pj_status == PJ_SUCCESS)
     {
-        if (g_ice_global.ice_passive)
+        pj_status = pj_ice_sess_start_check(g_ice_global.ice);
+        if (pj_status != PJ_SUCCESS)
         {
-            pj_status = pj_ice_sess_start_check(g_ice_global.ice);
-            if (pj_status != PJ_SUCCESS)
-            {
-                log_error("pj_ice_sess_start_check() failed, ret: %d", pj_status);
-            }
+            log_error("pj_ice_sess_start_check() failed, ret: %d", pj_status);
         }
     }
     else
@@ -898,10 +935,10 @@ int main(int argc, char *argv[])
 
     setup_signal(local_signal_ip, local_signal_port, remote_signal_ip, remote_signal_port);
     setup_ice(ice_role_passive, ice_ufrag, ice_passwd, ice_foundation);
-  #if defined(USE_ICE_HOST) && !defined(USE_ICE_SVRFLX)
+  #if defined(USE_ICE_HOST)
     setup_ice_local_host(local_ice_host_ip, local_ice_host_port);
   #endif
-  #if defined(USE_ICE_SVRFLX) && !defined(USE_ICE_HOST)
+  #if defined(USE_ICE_SVRFLX)
     setup_stun(stun_server_ip, stun_server_port, local_stun_ip, local_stun_port);
   #endif
   #if defined(USE_ICE_RELAY)
@@ -911,10 +948,10 @@ int main(int argc, char *argv[])
     signal(SIGINT, on_interrupt);
     loop_loop(g_ice_global.loop);
 
-  #if defined(USE_ICE_HOST) && !defined(USE_ICE_SVRFLX)
+  #if defined(USE_ICE_HOST)
     cleanup_ice_local_host();
   #endif
-  #if defined(USE_ICE_SVRFLX) && !defined(USE_ICE_HOST)
+  #if defined(USE_ICE_SVRFLX)
     cleanup_stun();
   #endif
   #if defined(USE_ICE_RELAY)

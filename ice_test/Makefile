@@ -9,7 +9,7 @@ ice_test: ice_test.c
         -g \
         -I$(TINYLIB_ROOT) -L$(TINYLIB_ROOT)/output/ -ltinylib_x64 \
         -lpj -lpjlib-util -lpjnath -pthread \
-        -DUSE_ICE_SVRFLX
+        -DUSE_ICE_SVRFLX -DUSE_ICE_RELAY
 
 ice_test_arm: ice_test.c
 	arm-sunxiA20-linux-gnueabi-gcc $^ -o $@ \
@@ -18,7 +18,7 @@ ice_test_arm: ice_test.c
         -I$(CUBIE_ROOT)/include -L$(CUBIE_ROOT)/lib \
         -DPJ_IS_LITTLE_ENDIAN=1 -DPJ_IS_BIG_ENDIAN=0 \
         -lpj -lpjlib-util -lpjnath -pthread \
-        -DUSE_ICE_SVRFLX
+        -DUSE_ICE_SVRFLX -DUSE_ICE_RELAY
 
 turn: turn.c
 	gcc $^ -o $@ \
