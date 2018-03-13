@@ -673,7 +673,7 @@ int dtls_server_start
     dtls_server->dtls_state = DTLS_STATE_HANDSHAKE;
 
     dtls_server->ssl_ctx = SSL_CTX_new(DTLS_server_method());
-    SSL_CTX_set_mode(dtls_server->ssl_ctx, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER | SSL_MODE_AUTO_RETRY);
+    SSL_CTX_set_mode(dtls_server->ssl_ctx, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER | SSL_MODE_ENABLE_PARTIAL_WRITE |SSL_MODE_AUTO_RETRY);
     dtls_server->ssl = SSL_new(dtls_server->ssl_ctx);
 
     SSL_set_fd(dtls_server->ssl, dtls_server->dtls_fd);

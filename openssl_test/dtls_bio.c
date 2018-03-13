@@ -37,7 +37,7 @@ struct stream_bio_private{
 static
 int stream_bio_bwrite(BIO *b, const char *in, int inl)
 {
-    struct stream_bio_private *priv = (struct stream_bio_private*)BIO_get_data(b);
+    struct stream_bio_private *priv = (struct stream_bio_private*)b->ptr;
     
     int result;
     void *pending_data;
@@ -71,7 +71,7 @@ int stream_bio_bwrite(BIO *b, const char *in, int inl)
 static
 int stream_bio_bread(BIO *b, char *out, int outl)
 {
-    struct stream_bio_private *priv = (struct stream_bio_private*)BIO_get_data(b);
+    struct stream_bio_private *priv = (struct stream_bio_private*)b->ptr;
 
     int result;
     char *pending_data;
@@ -113,7 +113,7 @@ int stream_bio_bputs(BIO *b, const char *str)
 static
 long stream_bio_ctrl(BIO *b, int cmd, long num, void *ptr)
 {
-    struct stream_bio_private *priv = (struct stream_bio_private*)BIO_get_data(b);
+    struct stream_bio_private *priv = (struct stream_bio_private*)b->ptr;
 
     int ret = 1;
     switch(cmd)
@@ -134,6 +134,7 @@ long stream_bio_ctrl(BIO *b, int cmd, long num, void *ptr)
             ret = BIO_NOCLOSE;
             break;
         }
+      #if 0
         case BIO_CTRL_SET_CLOSE:
         {
             break;
@@ -143,10 +144,9 @@ long stream_bio_ctrl(BIO *b, int cmd, long num, void *ptr)
         {
             break;
         }
-      #if 0
         case BIO_CTRL_DGRAM_QUERY_MTU:
         {
-            ret = 4096;
+            ret = 1500;
             break;
         }
         case BIO_CTRL_DGRAM_SET_MTU:
@@ -177,8 +177,7 @@ long stream_bio_ctrl(BIO *b, int cmd, long num, void *ptr)
       #endif
         default:
         {
-            ret = 0;
-            break;
+            return 0;
         }
     }
     
@@ -192,8 +191,10 @@ int stream_bio_create(BIO *b)
 
     priv->in_buffer = buffer_new(4096);
     priv->out_buffer = buffer_new(4096);
-    BIO_set_data(b, priv);
-    BIO_set_init(b, 1);
+    b->ptr = priv;
+    b->init = 1;
+    b->shutdown = 0;
+    b->num = 0;
 
     return 1;
 }
@@ -201,9 +202,9 @@ int stream_bio_create(BIO *b)
 static
 int stream_bio_destroy(BIO *b)
 {
-    struct stream_bio_private *priv = (struct stream_bio_private*)BIO_get_data(b);
+    struct stream_bio_private *priv = (struct stream_bio_private*)b->ptr;
 
-    BIO_set_data(b, NULL);
+    b->ptr = NULL;
     if (priv != NULL)
     {
         buffer_destory(priv->in_buffer);
@@ -214,6 +215,7 @@ int stream_bio_destroy(BIO *b)
     return 1;
 }
 
+#if 0
 BIO_METHOD *stream_bio_method_new(void)
 {
     BIO_METHOD *bio_method = BIO_meth_new(BIO_TYPE_SOCKET, "stream_packet");
@@ -226,6 +228,21 @@ BIO_METHOD *stream_bio_method_new(void)
 
     return bio_method;
 }
+#else
+
+BIO_METHOD stream_bio_method = {
+    BIO_TYPE_SOCKET,
+    "stream_packet",
+    stream_bio_bwrite,
+    stream_bio_bread,
+    stream_bio_bputs,
+    NULL,
+    stream_bio_ctrl,
+    stream_bio_create,
+    stream_bio_destroy,
+    NULL
+};
+#endif
 
 #endif
 
@@ -247,7 +264,6 @@ typedef struct dtls_client{
     SSL_CTX *ssl_ctx;
     SSL *ssl;
   #if defined(USE_STREAM_BIO)
-    BIO_METHOD *bio_method;
     BIO *bio;
   #endif
 
@@ -311,8 +327,7 @@ int dtls_client_start(dtls_client_t* dtls_client, int fd, loop_t *loop)
     SSL_CTX_set_mode(dtls_client->ssl_ctx, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER | SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_AUTO_RETRY);
     dtls_client->ssl = SSL_new(dtls_client->ssl_ctx);
   #if defined(USE_STREAM_BIO)
-    dtls_client->bio_method = stream_bio_method_new();
-    dtls_client->bio = BIO_new(dtls_client->bio_method);
+    dtls_client->bio = BIO_new(&stream_bio_method);
     BIO_set_fd(dtls_client->bio, fd, BIO_NOCLOSE);
     SSL_set_bio(dtls_client->ssl, dtls_client->bio, dtls_client->bio);
   #else
@@ -352,7 +367,6 @@ void dtls_client_stop(dtls_client_t* dtls_client)
     SSL_CTX_free(dtls_client->ssl_ctx);
   #if defined(USE_STREAM_BIO)
     BIO_free(dtls_client->bio);
-    BIO_meth_free(dtls_client->bio_method);
   #endif
     channel_detach(dtls_client->channel);
     channel_destroy(dtls_client->channel);
@@ -370,7 +384,6 @@ typedef struct dtls_server{
     SSL_CTX *ssl_ctx;
     SSL *ssl;
   #if defined(USE_STREAM_BIO)
-    BIO_METHOD *bio_method;
     BIO *bio;
   #endif
 
@@ -439,8 +452,7 @@ int dtls_server_start
     dtls_server->ssl = SSL_new(dtls_server->ssl_ctx);
 
   #if defined(USE_STREAM_BIO)
-    dtls_server->bio_method = stream_bio_method_new();
-    dtls_server->bio = BIO_new(dtls_server->bio_method);
+    dtls_server->bio = BIO_new(&stream_bio_method);
     BIO_set_fd(dtls_server->bio, fd, BIO_NOCLOSE);
 
     SSL_set_bio(dtls_server->ssl, dtls_server->bio, dtls_server->bio);
@@ -488,7 +500,6 @@ void dtls_server_stop(dtls_server_t* dtls_server)
     SSL_CTX_free(dtls_server->ssl_ctx);
   #if defined(USE_STREAM_BIO)
     BIO_free(dtls_server->bio);
-    BIO_meth_free(dtls_server->bio_method);
   #endif
     channel_detach(dtls_server->channel);
     channel_destroy(dtls_server->channel);
