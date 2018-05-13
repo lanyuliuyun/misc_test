@@ -448,7 +448,7 @@ int dtls_client_start(dtls_client_t* dtls_client, int io_fd, loop_t *loop, FILE 
         log_error("failed to start dtls client handshake: fatal ssl error: %d, sys error: %d", ssl_error, errno);
         return -1;
     }
-    
+
     return 0;
 }
 
@@ -776,7 +776,7 @@ int main(int argc, char *argv[])
     ca_file = "/mnt/d/ca/cert.pem";
     key_file = "/mnt/d/ca/key.pem";
     ca_pwd = "sslselftest";
-    
+
    #if defined(DTLS_SRTP_KEY_DUMP)
     client_source_fp = fopen("client_source.srtp", "wb");
     client_sink_fp = fopen("client_sink.srtp", "wb");
@@ -793,15 +793,15 @@ int main(int argc, char *argv[])
     key_file = argv[2];
     ca_pwd = argv[3];
   #endif
-  
-    //log_setlevel(LOG_LEVEL_DEBUG);
-    srtp_set_debug_module("srtp", 1);
-    srtp_set_debug_module("auth func", 1);
-    srtp_install_log_handler(srtp_log_print, NULL);
 
     SSL_library_init();
     SSL_load_error_strings();
     srtp_init();
+    
+    //log_setlevel(LOG_LEVEL_DEBUG);
+    srtp_set_debug_module("srtp", 1);
+    srtp_set_debug_module("auth func", 1);
+    srtp_install_log_handler(srtp_log_print, NULL);
 
     loop = loop_new(64);
 

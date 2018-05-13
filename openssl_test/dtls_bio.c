@@ -322,7 +322,7 @@ int dtls_client_start(dtls_client_t* dtls_client, int fd, loop_t *loop)
     channel_setevent(dtls_client->channel, POLLIN);
 
     dtls_client->dtls_state = DTLS_STATE_HANDSHAKE;
-    
+
     dtls_client->ssl_ctx = SSL_CTX_new(DTLS_client_method());
     SSL_CTX_set_mode(dtls_client->ssl_ctx, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER | SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_AUTO_RETRY);
     dtls_client->ssl = SSL_new(dtls_client->ssl_ctx);
@@ -332,6 +332,7 @@ int dtls_client_start(dtls_client_t* dtls_client, int fd, loop_t *loop)
     SSL_set_bio(dtls_client->ssl, dtls_client->bio, dtls_client->bio);
   #else
     SSL_set_fd(dtls_client->ssl, fd);
+    DTLS_set_link_mtu(dtls_client->ssl, 1500);
   #endif
 
     SSL_set_connect_state(dtls_client->ssl);
@@ -439,7 +440,7 @@ int dtls_server_start
 {
     int ssl_ret;
     int ssl_error;
-    
+
     dtls_server->fd = fd;
     dtls_server->loop = loop;
     dtls_server->channel = channel_new(fd, loop, on_dtls_server_event, dtls_server);
@@ -458,6 +459,7 @@ int dtls_server_start
     SSL_set_bio(dtls_server->ssl, dtls_server->bio, dtls_server->bio);
   #else
     SSL_set_fd(dtls_server->ssl, fd);
+    DTLS_set_link_mtu(dtls_server->ssl, 1500);
   #endif
 
     SSL_set_accept_state(dtls_server->ssl);
